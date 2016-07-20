@@ -1,13 +1,10 @@
-FROM jeanblanchard/alpine-glibc
-
-ADD user-sessions /bin/user-sessions
+FROM golang:1.6-alpine
 
 ARG git_commit=unknown
-ARG buildenv_git_commit=unknown
-ARG version=unknown
-LABEL org.iplantc.de.user-sessions.git-ref="$git_commit" \
-      org.iplantc.de.user-sessions.version="$version" \
-      org.iplantc.de.buildenv.git-ref="$buildenv_git_commit"
+LABEL org.cyverse.git-ref="$git_commit"
+
+COPY . /go/src/github.com/cyverse-de/user-sessions
+RUN go install github.com/cyverse-de/user-sessions
 
 EXPOSE 60000
 ENTRYPOINT ["user-sessions"]
