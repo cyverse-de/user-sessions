@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	_ "expvar"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -205,6 +206,7 @@ func New(db DB) *UserSessionsApp {
 	app.router.HandleFunc("/{username}", app.PutRequest).Methods("PUT")
 	app.router.HandleFunc("/{username}", app.PostRequest).Methods("POST")
 	app.router.HandleFunc("/{username}", app.DeleteRequest).Methods("DELETE")
+	app.router.Handle("/debug/vars", http.DefaultServeMux)
 	return app
 }
 
