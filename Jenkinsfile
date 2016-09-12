@@ -1,3 +1,4 @@
+#!groovy
 def repo = "user-sessions"
 def dockerUser = "discoenv"
 
