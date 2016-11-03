@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
 
 type MockDB struct {
@@ -444,5 +446,212 @@ func TestDeleteUnstored(t *testing.T) {
 
 	if actualStatus != expectedStatus {
 		t.Errorf("DELETE status code was %d instead of %d", actualStatus, expectedStatus)
+	}
+}
+
+func TestNewSessionsDB(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	if db != p.db {
+		t.Error("dbs did not match")
+	}
+}
+
+func TestIsUser(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM \\( SELECT DISTINCT id FROM users").
+		WithArgs("test-user").
+		WillReturnRows(sqlmock.NewRows([]string{"check_user"}).AddRow(1))
+
+	present, err := p.isUser("test-user")
+	if err != nil {
+		t.Errorf("error calling isUser(): %s", err)
+	}
+
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations were not met: %s", err)
+	}
+
+	if !present {
+		t.Error("test-user was not found")
+	}
+}
+
+func TestHasSessions(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	mock.ExpectQuery("SELECT COUNT\\(s.\\*\\) FROM user_sessions s, users u WHERE s.user_id = u.id").
+		WithArgs("test-user").
+		WillReturnRows(sqlmock.NewRows([]string{""}).AddRow("1"))
+
+	hasSessions, err := p.hasSessions("test-user")
+	if err != nil {
+		t.Errorf("error from hasSessions(): %s", err)
+	}
+
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations were not met: %s", err)
+	}
+
+	if !hasSessions {
+		t.Error("hasSessions() returned false")
+	}
+}
+
+func TestGetSessions(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	mock.ExpectQuery("SELECT s.id AS id, s.user_id AS user_id, s.session AS session FROM user_sessions s, users u WHERE s.user_id = u.id AND u.username =").
+		WithArgs("test-user").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "session"}).AddRow("1", "2", "{}"))
+
+	records, err := p.getSessions("test-user")
+	if err != nil {
+		t.Errorf("error from getSessions(): %s", err)
+	}
+
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations were not met: %s", err)
+	}
+
+	if len(records) != 1 {
+		t.Errorf("number of records returned was %d instead of 1", len(records))
+	}
+
+	session := records[0]
+	if session.UserID != "2" {
+		t.Errorf("user id was %s instead of 2", session.UserID)
+	}
+
+	if session.ID != "1" {
+		t.Errorf("id was %s instead of 1", session.ID)
+	}
+
+	if session.Session != "{}" {
+		t.Errorf("session was %s instead of '{}'", session.Session)
+	}
+}
+
+func TestInsertSession(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	mock.ExpectQuery("SELECT id FROM users WHERE username =").
+		WithArgs("test-user").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("1"))
+
+	mock.ExpectExec("INSERT INTO user_sessions \\(user_id, session\\) VALUES").
+		WithArgs("1", "{}").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err = p.insertSession("test-user", "{}"); err != nil {
+		t.Errorf("error inserting session: %s", err)
+	}
+
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations were not met: %s", err)
+	}
+}
+
+func TestUpdateSession(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	mock.ExpectQuery("SELECT id FROM users WHERE username =").
+		WithArgs("test-user").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("1"))
+
+	mock.ExpectExec("UPDATE ONLY user_sessions SET session =").
+		WithArgs("1", "{}").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err = p.updateSession("test-user", "{}"); err != nil {
+		t.Errorf("error updating session: %s", err)
+	}
+
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations were not met: %s", err)
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("error creating the mock db: %s", err)
+	}
+	defer db.Close()
+
+	p := NewSessionsDB(db)
+	if p == nil {
+		t.Error("NewSessionsDB returned nil")
+	}
+
+	mock.ExpectQuery("SELECT id FROM users WHERE username =").
+		WithArgs("test-user").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("1"))
+
+	mock.ExpectExec("DELETE FROM ONLY user_sessions WHERE user_id =").
+		WithArgs("1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err = p.deleteSession("test-user"); err != nil {
+		t.Errorf("error deleting session: %s", err)
+	}
+
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations were not met: %s", err)
 	}
 }
